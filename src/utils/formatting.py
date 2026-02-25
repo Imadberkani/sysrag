@@ -13,6 +13,9 @@ format_date:
 read_dataframe:
     Read a CSV file into a list of dictionaries and format date columns
     ('published_at' and 'updated_at') to "YYYY-MM-DD".
+
+format_relevant_data:
+    Retrieves the top_k most relevant documents based on a given query and constructs an augmented prompt for a RAG system.
 """
 
 from __future__ import annotations
@@ -105,3 +108,29 @@ def read_dataframe(
             df[col] = df[col].apply(lambda x: format_date(x) if x else x)
 
     return df.to_dict(orient="records")
+
+def format_relevant_data(relevant_data):
+    """
+    Retrieves the top_k most relevant documents based on a given query and constructs an augmented prompt for a RAG system.
+
+    Parameters:
+    relevant_data (list): A list with relevant data.
+
+    Returns:
+    str: An augmented prompt with the top_k relevant documents, formatted for use in a Retrieval-Augmented Generation (RAG) system."
+    """
+
+    # Create a list so store the formatted documents
+    formatted_documents = []
+    
+    # Iterates over each relevant document.
+    for document in relevant_data:
+
+        # Formats each document into a structured layout string. Remember that each document is in one different line. So you should add a new line character after each document added.
+        formatted_document = json.dumps(document, indent=2, ensure_ascii=False)
+        
+        # Append the formatted document string to the formatted_documents list
+        formatted_documents.append(formatted_document)
+        
+    # Returns the final augmented prompt string.
+    return "\n".join(formatted_documents)
