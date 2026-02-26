@@ -15,7 +15,8 @@ dependencies = [
     "joblib (==1.5.1)",
     "scikit-learn (==1.7.0)",
     "requests (==2.32.4)",
-    "together (>=2.2.0,<3.0.0)"
+    "together (>=2.2.0,<3.0.0)",
+    "python-dotenv (>=1.2.1,<2.0.0)"
 ]
 
 

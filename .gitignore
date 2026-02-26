@@ -70,6 +70,7 @@ new_env/
 scorescanner.egg-info/
 __pycache__/
 poetry.txt
+.env
 # CMake
 cmake-build-*/
 *.pyc
