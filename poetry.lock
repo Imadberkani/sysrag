@@ -219,6 +219,33 @@ webencodings = "*"
 css = ["tinycss2 (>=1.1.0,<1.5)"]
 
 [[package]]
+name = "bm25s"
+version = "0.3.0"
+description = "An ultra-fast implementation of BM25 based on sparse matrices."
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "bm25s-0.3.0-py3-none-any.whl", hash = "sha256:ef515019afafdc5bc181af71097dab78928b76601a1f2745b5761c9bccb6e6dd"},
+    {file = "bm25s-0.3.0.tar.gz", hash = "sha256:591aa454d03763bdbc89961823f03fde0016467ceb5a1438363ef1ec3f0a09c9"},
+]
+
+[package.dependencies]
+numpy = "*"
+
+[package.extras]
+cli = ["rich"]
+core = ["PyStemmer", "numba", "orjson", "tqdm"]
+dev = ["black"]
+evaluation = ["pytrec_eval"]
+full = ["PyStemmer", "PyStemmer", "black", "huggingface_hub", "jax[cpu]", "mcp", "numba", "orjson", "pytrec_eval", "rich", "scipy", "tqdm"]
+hf = ["huggingface_hub"]
+indexing = ["scipy"]
+mcp = ["mcp"]
+selection = ["jax[cpu]"]
+stem = ["PyStemmer"]
+
+[[package]]
 name = "certifi"
 version = "2026.1.4"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -3094,6 +3121,24 @@ files = [
 cffi = {version = "*", markers = "implementation_name == \"pypy\""}
 
 [[package]]
+name = "rank-bm25"
+version = "0.2.2"
+description = "Various BM25 algorithms for document ranking"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "rank_bm25-0.2.2-py3-none-any.whl", hash = "sha256:7bd4a95571adadfc271746fa146a4bcfd89c0cf731e49c3d1ad863290adbe8ae"},
+    {file = "rank_bm25-0.2.2.tar.gz", hash = "sha256:096ccef76f8188563419aaf384a02f0ea459503fdf77901378d4fd9d87e5e51d"},
+]
+
+[package.dependencies]
+numpy = "*"
+
+[package.extras]
+dev = ["pytest"]
+
+[[package]]
 name = "referencing"
 version = "0.37.0"
 description = "JSON Referencing + Python"
@@ -4427,4 +4472,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "9e75ff61c885b390304cc23da194e2484b0a856305aa6715738337c208329afc"
+content-hash = "4fc16f5a3e7cc4dc8aa534cf20bcec5b9a49d7acbd6218751dc01eef0c6ea31a"

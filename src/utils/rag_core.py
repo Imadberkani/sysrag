@@ -34,6 +34,7 @@ import joblib
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
+import bm25s
 from utils.formatting import format_relevant_data
 from together import Together
 import ipywidgets as widgets
@@ -143,6 +144,9 @@ def retrieve(
     model: SentenceTransformer,
     embeddings: np.ndarray,
     top_k: int = 5,
+    method: str = "semantic",
+    BM25_RETRIEVER=None,
+    corpus=None
 ) -> List[int]:
     """
     Retrieve the indices of the top-k most similar documents for a query.
@@ -157,12 +161,33 @@ def retrieve(
         Precomputed document embeddings.
     top_k:
         Number of documents to retrieve.
+    method:
+        Retrieval method. "semantic" (default) or "bm25".
+    BM25_RETRIEVER:
+        Pre-indexed BM25 retriever (required if method="bm25").
+    corpus:
+        Corpus used by BM25 (required if method="bm25") to map results back to indices.
 
     Returns
     -------
     list[int]
         Indices of top-k most similar documents.
     """
+
+    if method == "bm25":
+        if BM25_RETRIEVER is None or corpus is None:
+            raise ValueError("BM25_RETRIEVER and corpus must be provided when method='bm25'.")
+
+        # Tokenize query and retrieve with BM25
+        tokenized_query = bm25s.tokenize(query)
+        results, scores = BM25_RETRIEVER.retrieve(tokenized_query, k=top_k)
+
+        results = results[0]
+        top_k_indices = [corpus.index(results[k]) for k in range(len(results))]
+
+        return top_k_indices
+
+    # --- semantic (default): strictly unchanged ---
     query_embedding = model.encode(query, normalize_embeddings=True)
 
     similarity_scores = cosine_similarity(
@@ -178,29 +203,134 @@ def retrieve(
 # RELEVANT DATA
 #=====================================================
 
-def get_relevant_data(query: str, model: SentenceTransformer, embeddings: np.ndarray, dataset: list[dict], top_k: int = 5) -> list[dict]:
+def reciprocal_rank_fusion(list1, list2, top_k=5, K=60):
+    """
+    Fuse rank from multiple IR systems using Reciprocal Rank Fusion.
+
+    Args:
+        list1 (list[int]): A list of indices of the top-k documents that match the query.
+        list2 (list[int]): Another list of indices of the top-k documents that match the query.
+        top_k (int): The number of top documents to consider from each list for fusion. Defaults to 5.
+        K (int): A constant used in the RRF formula. Defaults to 60.
+
+    Returns:
+        list[int]: A list of indices of the top-k documents sorted by their RRF scores.
+    """
+    
+    # Create a dictionary to store the RRF scores for each document index
+    rrf_scores = {}
+
+    # Iterate over each document list
+    for lst in [list1, list2]:
+        # Calculate the RRF score for each document index
+        for rank, item in enumerate(lst, start=1): # Start = 1 set the first element as 1 and not 0. 
+                                                   # This is a convention on how ranks work (the first element in ranking is denoted by 1 and not 0 as in lists)
+            # If the item is not in the dictionary, initialize its score to 0
+            if item not in rrf_scores:
+                rrf_scores[item] = 0
+            # Update the RRF score for each document index using the formula 1 / (rank + K)
+            rrf_scores[item] += 1 / (rank + K)
+    print(rrf_scores)
+    # Sort the document indices based on their RRF scores in descending order
+    sorted_items = sorted(rrf_scores, key=rrf_scores.get, reverse = True)
+
+    # Slice the list to get the top-k document indices
+    top_k_indices = [int(x) for x in sorted_items[:top_k]]
+
+    return top_k_indices
+
+def get_relevant_data(
+    query: str,
+    model: SentenceTransformer,
+    embeddings: np.ndarray,
+    dataset: list[dict],
+    top_k: int = 5,
+    method: str = "semantic",
+    BM25_RETRIEVER=None,
+    corpus=None,
+    rrf_k: int = 60,
+) -> list[dict]:
     """
     Retrieve and return the top relevant data items based on a given query.
 
-    This function performs the following steps:
-    1. Retrieves the indices of the top 'k' relevant items from a dataset based on the provided `query`.
-    2. Fetches the corresponding data for these indices from the dataset.
+    Supported methods:
+    - "semantic": embedding cosine similarity retrieval
+    - "bm25": BM25 keyword retrieval
+    - "hybrid_rrf": combine "semantic" and "bm25" rankings using Reciprocal Rank Fusion (RRF)
 
-    Parameters:
-    - query (str): The search query string used to find relevant items.
-    - top_k (int, optional): The number of top items to retrieve. Default is 5.
+    Parameters
+    ----------
+    query : str
+        Search query.
+    model : SentenceTransformer
+        Embedding model.
+    embeddings : np.ndarray
+        Precomputed document embeddings.
+    dataset : list[dict]
+        Dataset aligned with embeddings/corpus (same ordering).
+    top_k : int
+        Number of items to return.
+    method : str
+        Retrieval method: "semantic" (default), "bm25", or "hybrid_rrf".
+    BM25_RETRIEVER : Any
+        Prebuilt BM25 retriever (required for bm25 / hybrid_rrf).
+    corpus : list
+        Corpus used by BM25 to map results back to indices (required for bm25 / hybrid_rrf).
+    rrf_k : int
+        RRF constant K (default 60).
 
-    Returns:
-    - list[dict]: A list of dictionaries containing the data associated 
-      with the top relevant items.
-
+    Returns
+    -------
+    list[dict]
+        Top relevant dataset items.
     """
-    # Retrieve the indices of the top_k relevant items given the query
-    relevant_indices = retrieve(query = query, model=model, embeddings=embeddings, top_k = top_k)
 
-    # Obtain the data related to the items using the indices from the previous step
-    relevant_data = query_news(indices = relevant_indices, dataset=dataset)
+    # --- Hybrid: semantic + bm25 with RRF ---
+    if method == "hybrid_rrf":
+        if BM25_RETRIEVER is None or corpus is None:
+            raise ValueError("BM25_RETRIEVER and corpus must be provided when method='hybrid_rrf'.")
 
+        # Get two ranked lists (indices)
+        semantic_indices = retrieve(
+            query=query,
+            model=model,
+            embeddings=embeddings,
+            top_k=top_k,
+            method="semantic",
+        )
+
+        bm25_indices = retrieve(
+            query=query,
+            model=model,
+            embeddings=embeddings,
+            top_k=top_k,
+            method="bm25",
+            BM25_RETRIEVER=BM25_RETRIEVER,
+            corpus=corpus,
+        )
+
+        # Fuse them with RRF, then fetch data
+        fused_indices = reciprocal_rank_fusion(
+            semantic_indices,
+            bm25_indices,
+            top_k=top_k,
+            K=rrf_k
+        )
+
+        return query_news(indices=fused_indices, dataset=dataset)
+
+    # --- Single-method retrieval (semantic or bm25) ---
+    relevant_indices = retrieve(
+        query=query,
+        model=model,
+        embeddings=embeddings,
+        top_k=top_k,
+        method=method,
+        BM25_RETRIEVER=BM25_RETRIEVER,
+        corpus=corpus
+    )
+
+    relevant_data = query_news(indices=relevant_indices, dataset=dataset)
     return relevant_data
 
 
@@ -208,7 +338,19 @@ def get_relevant_data(query: str, model: SentenceTransformer, embeddings: np.nda
 # PROMPT GENERATION
 #=====================================================
 
-def generate_final_prompt(query: str, model: SentenceTransformer, embeddings: np.ndarray, dataset: list[dict], top_k: int = 5, use_rag: bool = True, prompt: str = None) -> str:
+def generate_final_prompt(
+    query: str,
+    model: SentenceTransformer,
+    embeddings: np.ndarray,
+    dataset: list[dict],
+    top_k: int = 5,
+    use_rag: bool = True,
+    prompt: str = None,
+    method: str = "semantic",
+    BM25_RETRIEVER=None,
+    corpus=None,
+    rrf_k: int = 60
+    ) -> str:
     """
     Generates a final prompt based on a user query, optionally incorporating relevant data using retrieval-augmented generation (RAG).
 
@@ -229,7 +371,7 @@ def generate_final_prompt(query: str, model: SentenceTransformer, embeddings: np
         return query
 
     # Retrieve the top_k relevant data pieces based on the query
-    relevant_data = get_relevant_data(query=query, model=model, embeddings=embeddings, dataset=dataset, top_k=top_k)
+    relevant_data = get_relevant_data(query=query, model=model, embeddings=embeddings, dataset=dataset, top_k=top_k, method=method, BM25_RETRIEVER=BM25_RETRIEVER, corpus=corpus, rrf_k=rrf_k)
 
     # Format the retrieved relevant data
     retrieve_data_formatted = format_relevant_data(relevant_data=relevant_data)
@@ -398,7 +540,20 @@ def generate_with_multiple_input(
         "content": message.content
     }
 
-def llm_call(query: str, model: SentenceTransformer, embeddings: np.ndarray, dataset: list[dict], top_k: int = 5, use_rag: bool = True, together_api_key: str = os.getenv("TOGETHER_API_KEY"), prompt: str = None) -> str:
+def llm_call(
+    query: str,
+    model: SentenceTransformer,
+    embeddings: np.ndarray,
+    dataset: list[dict],
+    top_k: int = 5,
+    use_rag: bool = True,
+    together_api_key: str = os.getenv("TOGETHER_API_KEY"),
+    prompt: str = None,
+    method: str = "semantic",
+    BM25_RETRIEVER=None,
+    corpus=None,
+    rrf_k: int = 60
+    ) -> str:
     """
     Calls the LLM to generate a response based on a query, optionally using retrieval-augmented generation.
 
@@ -413,7 +568,7 @@ def llm_call(query: str, model: SentenceTransformer, embeddings: np.ndarray, dat
     
 
     # Get the prompt with the query + relevant documents
-    prompt = generate_final_prompt(query=query, model=model, embeddings=embeddings, dataset=dataset, top_k=top_k, use_rag=use_rag, prompt=prompt)
+    prompt = generate_final_prompt(query=query, model=model, embeddings=embeddings, dataset=dataset, top_k=top_k, use_rag=use_rag, prompt=prompt, method=method, BM25_RETRIEVER= BM25_RETRIEVER, corpus=corpus, rrf_k=rrf_k)
 
     # Call the LLM
     generated_response = generate_with_single_input(prompt=prompt, together_api_key=os.getenv("TOGETHER_API_KEY"))
@@ -423,101 +578,191 @@ def llm_call(query: str, model: SentenceTransformer, embeddings: np.ndarray, dat
     
     return generated_message
 
-def display_widget(llm_call_func: callable, model: SentenceTransformer, embeddings: np.ndarray, dataset: list[dict], top_k: int = 5, use_rag: bool = True, prompt: str = None) -> str:
-    def on_button_click(b):
+def display_widget(
+    llm_call_func: callable,
+    model: SentenceTransformer,
+    embeddings: np.ndarray,
+    dataset: list[dict],
+    *,
+    BM25_RETRIEVER=None,
+    corpus=None,
+    rrf_k: int = 60,
+) -> None:
+    def on_button_click(_):
         # Clear outputs
-        output1.clear_output()
-        output2.clear_output()
-        status_output.clear_output()
-        # Display "Generating..." message
-        status_output.append_stdout("Generating...\n")
-        query = query_input.value
-        top_k = slider.value
-        prompt = prompt_input.value.strip() if prompt_input.value.strip() else None
-        response1 = llm_call(query=query, model=model, embeddings=embeddings, dataset=dataset, top_k=top_k, use_rag=True, prompt=prompt)      
-        response2 = llm_call(query=query, model=model, embeddings=embeddings, dataset=dataset, top_k=top_k, use_rag=False, prompt=prompt)
-        # Update responses
-        with output1:
-            display(Markdown(response1))
-        with output2:
-            display(Markdown(response2))
-        # Clear "Generating..." message
+        out_sem.clear_output()
+        out_bm25.clear_output()
+        out_rrf.clear_output()
+        out_no_rag.clear_output()
         status_output.clear_output()
 
+        status_output.append_stdout("Generating...\n")
+
+        query = query_input.value.strip()
+        top_k = slider.value
+        custom_prompt = prompt_input.value.strip() if prompt_input.value.strip() else None
+
+        if not query:
+            status_output.clear_output()
+            status_output.append_stdout("Please enter a query.\n")
+            return
+
+        # --- Semantic (RAG) ---
+        try:
+            resp_sem = llm_call(
+                query=query,
+                model=model,
+                embeddings=embeddings,
+                dataset=dataset,
+                top_k=top_k,
+                use_rag=True,
+                prompt=custom_prompt,
+                method="semantic",
+                BM25_RETRIEVER=BM25_RETRIEVER,
+                corpus=corpus,
+                rrf_k=rrf_k,
+            )
+        except Exception as e:
+            resp_sem = f"**Error (Semantic):** {e}"
+
+        # --- BM25 (RAG) ---
+        try:
+            resp_bm25 = llm_call(
+                query=query,
+                model=model,
+                embeddings=embeddings,
+                dataset=dataset,
+                top_k=top_k,
+                use_rag=True,
+                prompt=custom_prompt,
+                method="bm25",
+                BM25_RETRIEVER=BM25_RETRIEVER,
+                corpus=corpus,
+                rrf_k=rrf_k,
+            )
+        except Exception as e:
+            resp_bm25 = f"**Error (BM25):** {e}"
+
+        # --- Hybrid RRF (RAG) ---
+        try:
+            resp_rrf = llm_call(
+                query=query,
+                model=model,
+                embeddings=embeddings,
+                dataset=dataset,
+                top_k=top_k,
+                use_rag=True,
+                prompt=custom_prompt,
+                method="hybrid_rrf",
+                BM25_RETRIEVER=BM25_RETRIEVER,
+                corpus=corpus,
+                rrf_k=rrf_k,
+            )
+        except Exception as e:
+            resp_rrf = f"**Error (RRF):** {e}"
+
+        # --- Without RAG ---
+        try:
+            resp_no_rag = llm_call(
+                query=query,
+                model=model,
+                embeddings=embeddings,
+                dataset=dataset,
+                top_k=top_k,
+                use_rag=False,
+                prompt=custom_prompt,
+                method="semantic",  # irrelevant when use_rag=False, but harmless
+                BM25_RETRIEVER=BM25_RETRIEVER,
+                corpus=corpus,
+                rrf_k=rrf_k,
+            )
+        except Exception as e:
+            resp_no_rag = f"**Error (Without RAG):** {e}"
+
+        with out_sem:
+            display(Markdown(resp_sem))
+        with out_bm25:
+            display(Markdown(resp_bm25))
+        with out_rrf:
+            display(Markdown(resp_rrf))
+        with out_no_rag:
+            display(Markdown(resp_no_rag))
+
+        status_output.clear_output()
+
+    # Inputs
     query_input = widgets.Text(
-        description='Query:',
-        placeholder='Type your query here',
-        layout=widgets.Layout(width='100%')
+        description="Query:",
+        placeholder="Type your query here",
+        layout=widgets.Layout(width="100%")
     )
 
     prompt_input = widgets.Textarea(
-        description='Augmented prompt layout:',
-        placeholder=("Type your prompt layout here, don't forget to add {query} and {documents} "
-                     "where you want them to be placed! Leaving this blank will default to the "
-                     "prompt in generate_final_prompt. Example:\nThis is a query: {query}\nThese are the documents: {documents}"),
-        layout=widgets.Layout(width='100%', height='100px'),
-        style={'description_width': 'initial'}
+        description="Augmented prompt layout:",
+        placeholder=("Optional custom prompt. Use {query} and {documents} placeholders.\n"
+                     "Leave blank to use the default prompt builder."),
+        layout=widgets.Layout(width="100%", height="90px"),
+        style={"description_width": "initial"}
     )
 
     slider = widgets.IntSlider(
-        value=5,  # default value
+        value=5,
         min=1,
         max=20,
         step=1,
-        description='Top K:',
-        style={'description_width': 'initial'}
+        description="Top K:",
+        style={"description_width": "initial"}
     )
-
-    output1 = widgets.Output(layout={'border': '1px solid #ccc', 'width': '45%'})
-    output2 = widgets.Output(layout={'border': '1px solid #ccc', 'width': '45%'})
-    status_output = widgets.Output()
 
     submit_button = widgets.Button(
         description="Get Responses",
-        style={'button_color': '#f0f0f0', 'font_color': 'black'}
+        button_style="",  # keep neutral
+        layout=widgets.Layout(width="160px")
     )
     submit_button.on_click(on_button_click)
 
-    label1 = widgets.Label(value="With RAG", layout={'width': '45%', 'text_align': 'center'})
-    label2 = widgets.Label(value="Without RAG", layout={'width': '45%', 'text_align': 'center'})
+    status_output = widgets.Output()
+
+    # Outputs (4 panels)
+    out_sem = widgets.Output(layout={"border": "1px solid #ccc", "height": "320px", "overflow": "auto"})
+    out_bm25 = widgets.Output(layout={"border": "1px solid #ccc", "height": "320px", "overflow": "auto"})
+    out_rrf = widgets.Output(layout={"border": "1px solid #ccc", "height": "320px", "overflow": "auto"})
+    out_no_rag = widgets.Output(layout={"border": "1px solid #ccc", "height": "320px", "overflow": "auto"})
+
+    # Titles
+    title_sem = widgets.HTML("<b>Semantic Search</b>")
+    title_bm25 = widgets.HTML("<b>BM25 Search</b>")
+    title_rrf = widgets.HTML("<b>Reciprocal Rank Fusion</b>")
+    title_no_rag = widgets.HTML("<b>Without RAG</b>")
+
+    # Layout: controls on top
+    controls = widgets.VBox([
+        query_input,
+        prompt_input,
+        widgets.HBox([slider, submit_button]),
+        status_output
+    ])
+
+    # Layout: 2x2 grid
+    cell_left_top = widgets.VBox([title_sem, out_sem])
+    cell_right_top = widgets.VBox([title_bm25, out_bm25])
+    cell_left_bottom = widgets.VBox([title_rrf, out_rrf])
+    cell_right_bottom = widgets.VBox([title_no_rag, out_no_rag])
+
+    grid = widgets.VBox([
+        widgets.HBox([cell_left_top, cell_right_top], layout=widgets.Layout(justify_content="space-between")),
+        widgets.HBox([cell_left_bottom, cell_right_bottom], layout=widgets.Layout(justify_content="space-between")),
+    ])
+
+    # Make columns consistent width
+    for cell in [cell_left_top, cell_right_top, cell_left_bottom, cell_right_bottom]:
+        cell.layout.width = "49%"
 
     display(widgets.HTML("""
     <style>
-        .custom-output {
-            background-color: #f9f9f9;
-            color: black;
-            border-radius: 5px;
-        }
-        .widget-textarea, .widget-button {
-            background-color: #f0f0f0 !important;
-            color: black !important;
-            border: 1px solid #ccc !important;
-        }
-        .widget-output {
-            background-color: #f9f9f9 !important;
-            color: black !important;
-        }
-        textarea {
-            background-color: #fff !important;
-            color: black !important;
-            border: 1px solid #ccc !important;
-        }
+        .widget-label { font-size: 14px; }
+        textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     </style>
     """))
 
-    display(query_input, prompt_input, slider, submit_button, status_output)
-    hbox_labels = widgets.HBox([label1, label2], layout={'justify_content': 'space-between'})
-    hbox_outputs = widgets.HBox([output1, output2], layout={'justify_content': 'space-between'})
-
-    def style_outputs(*outputs):
-        for output in outputs:
-            output.layout.margin = '5px'
-            output.layout.height = '300px'
-            output.layout.padding = '10px'
-            output.layout.overflow = 'auto'
-            output.add_class("custom-output")
-
-    style_outputs(output1, output2)
-    # Display label and output boxes
-    display(hbox_labels)
-    display(hbox_outputs)
+    display(controls, grid)
