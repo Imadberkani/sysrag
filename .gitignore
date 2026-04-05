@@ -75,6 +75,30 @@ poetry.txt
 cmake-build-*/
 *.pyc
 
+# Virtual environment
+.venv/
+
+# Local model caches / downloaded weights
+.models/
+.locks/
+models--BAAI--bge-base-en-v1.5/
+models--cross-encoder--ms-marco-MiniLM-L6-v2/
+notebooks/.models/
+models/
+
+# Python cache
+__pycache__/
+**/__pycache__/
+
+# Generated artifacts
+embeddings.joblib
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local secrets
+.env
+
 # Mongo Explorer plugin
 .idea/**/mongoSettings.xml
 

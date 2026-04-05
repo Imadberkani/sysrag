@@ -1,5 +1,5 @@
 """
-rag_core.py contains the core retrieval utilities for the RAG pipeline.
+rag_core.py contains the core retrieval utilities for the naive RAG pipeline.
 
 Functions
 ---------
@@ -401,7 +401,7 @@ def generate_with_single_input(
     top_p: Optional[float] = None,
     temperature: Optional[float] = None,
     max_tokens: int = 500,
-    model: str = "meta-llama/Llama-3.2-3B-Instruct-Turbo",
+    model: str = "google/gemma-3n-E4B-it",
     together_api_key: Optional[str] = None,
     **kwargs: Any
 ) -> Dict[str, str]:
