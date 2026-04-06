@@ -22,6 +22,9 @@ Large Language Models can generate impressive responses, but they remain constra
 
 This repository showcases a **RAG pipeline built on BBC News data**, designed to retrieve, rerank, and inject only the most relevant context into the generation step. By combining **Weaviate vector search**, context building, and LLM-based answer generation, the system produces more grounded, scalable, and context-efficient responses.
 
+<p align="center">
+  <img src="./src/assets/Animation.gif" alt="RAG demo animation" width="100%" />
+</p>
 
 ## 📦 Installation
 
