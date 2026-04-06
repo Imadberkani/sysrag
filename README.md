@@ -5,7 +5,6 @@
     <img
       src="./src/assets/test5.png"
       alt="RAG Architecture Diagram"
-      width="100%"
     />
   </a>
 </p>
