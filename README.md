@@ -1,4 +1,4 @@
-<h1 align="center">📰 RAG Pipeline: BBC News Retrieval-Augmented Generation</h1>
+<h1 align="center">📰 RAG Pipeline: Retrieval-Augmented QA on BBC News</h1>
 
 <p align="center">
   <a href="./src/assets/rag_pipeline.png">
