@@ -2,6 +2,6 @@
 
 <p align="center">
   <a href="./src/assets/rag_architecture_.png">
-    <img src="./src/assets/rag_architecture_.png" alt="RAG Architecture Diagram" width="100%" />
+    <img src="./src/assets/rag_architecture_.png" alt="RAG Architecture Diagram" />
   </a>
 </p>
