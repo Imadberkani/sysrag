@@ -35,7 +35,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import bm25s
-from utils.formatting import format_relevant_data
+from src.utils.formatting import format_relevant_data
 from together import Together
 import ipywidgets as widgets
 from IPython.display import display, Markdown

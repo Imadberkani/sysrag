@@ -44,7 +44,7 @@ import numpy as np
 import requests
 import ipywidgets as widgets
 from IPython.display import display, Markdown, HTML
-from utils.rag_core import (
+from src.utils.rag_core import (
     generate_with_single_input,
 )   
 # =====================================================
