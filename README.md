@@ -2,6 +2,10 @@
 
 <p align="center">
   <a href="./src/assets/sv.svg">
-    <img src="./src/assets/sv.svg" alt="RAG Architecture Diagram" />
+    <img
+      src="./src/assets/sv.svg"
+      alt="RAG Architecture Diagram"
+      width="1400"
+    />
   </a>
 </p>
