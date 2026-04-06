@@ -24,7 +24,7 @@ This repository showcases a **RAG pipeline built on BBC News data**, designed to
 
 
 ## 📦 Installation
-```md id="jlwmr1"
+
 This project uses **Poetry** for dependency management and environment isolation.
 
 ```bash
